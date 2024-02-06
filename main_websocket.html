@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Video Recorder</title>
+</head>
+<body>
+  <div>
+    <button id="startRecording">Start Recording</button>
+    <button id="stopRecording" disabled>Stop Recording</button>
+  </div>
+  <div>
+    <video id="liveVideo" width="640" height="480" autoplay muted></video>  <!-- muted audio while record -->
+    <!-- <video id="recordedVideo" controls></video> -->
+  </div>
+
+  <script>
+    let socket;
+    let mediaRecorder;
+    let recordedChunks = [];
+    const liveVideo = document.getElementById('liveVideo');
+
+    // establish connection
+    socket = new WebSocket('ws://localhost:8000/ws');
+
+    socket.addEventListener('open', (event) => {
+      console.log('WebSocket connection opened:', event);
+    });
+
+    socket.addEventListener('close', (event) => {
+      console.log('WebSocket connection closed:', event);
+    });
+
+    socket.addEventListener('error', (event) => {
+      console.error('WebSocket error:', event);
+    });
+
+    const startRecording = () => {
+      navigator.mediaDevices.getUserMedia({ video: true, audio: true })
+        .then((stream) => {
+
+          liveVideo.srcObject = stream;
+
+          mediaRecorder = new MediaRecorder(stream);
+
+          recordedChunks = [];
+
+          mediaRecorder.ondataavailable = (e) => {
+            if (e.data.size > 0) {
+              recordedChunks.push(e.data);
+            }
+          };
+
+          mediaRecorder.onstop = () => {    // stop recording
+            const blob = new Blob(recordedChunks, {mimeType: 'video/webm' });  // video type
+            const videoUrl = URL.createObjectURL(blob);
+            // document.getElementById('recordedVideo').src = videoUrl;
+
+            // Send blob to backend server
+            sendBlobToServer(blob);
+          };
+
+          mediaRecorder.start();
+          document.getElementById('startRecording').disabled = true;
+          document.getElementById('stopRecording').disabled = false;
+        })
+        .catch((error) => console.error('Error accessing media devices:', error));
+    };
+
+    const stopRecording = () => {
+      mediaRecorder.stop();
+      document.getElementById('startRecording').disabled = false;
+      document.getElementById('stopRecording').disabled = true;
+    };
+
+    const sendBlobToServer = (blob) => {
+      const reader = new FileReader();
+      reader.readAsDataURL(blob);  // convert blob as Blob64
+      reader.onload = () => {
+        // const arrayBuffer = reader.result;
+        // socket.send(arrayBuffer);
+        const Base64Video = reader.result;
+        base64_text_only = Base64Video.substr(Base64Video.indexOf(',') + 1)  //take only blob64 texts
+        socket.send(base64_text_only);  // send
+        console.log(base64_text_only);
+      };
+      // console.log("blob sent");
+
+    };
+
+    document.getElementById('startRecording').addEventListener('click', startRecording);
+    document.getElementById('stopRecording').addEventListener('click', stopRecording);
+  </script>
+</body>
+</html>
